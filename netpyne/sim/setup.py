@@ -144,6 +144,9 @@ def setNetParams(params):
 
     from .. import sim
 
+    if not hasattr(sim, 'net'):
+        sim.setNet(sim.Network())  # create new network if one doesn't exist
+
     if params and isinstance(params, specs.NetParams):
         paramsDict = utils.replaceKeys(params.todict(), 'popLabel', 'pop')  # for backward compatibility
         sim.net.params = specs.NetParams(paramsDict)  # convert back to NetParams obj
@@ -272,6 +275,8 @@ def readCmdLineArgs(simConfigDefault='cfg.py', netParamsDefault='netParams.py'):
             __main__.cfg = cfg
         except:
             print('\nWarning: Could not load cfg from command line path or from default cfg.py')
+            print('This usually occurs when cfg.py crashes.  Please ensure that your cfg.py file')
+            print('completes successfully on its own (i.e. execute "python cfg.py" and fix any bugs).')
             cfg = None
 
     if not netParamsPath:
@@ -286,6 +291,8 @@ def readCmdLineArgs(simConfigDefault='cfg.py', netParamsDefault='netParams.py'):
             netParams = netParamsModule.netParams
         except:
             print('\nWarning: Could not load netParams from command line path or from default netParams.py')
+            print('This usually occurs when netParams.py crashes.  Please ensure that your netParams.py file')
+            print('completes successfully on its own (i.e. execute "python netParams.py" and fix any bugs).')
             netParams = None
 
     return cfg, netParams
@@ -309,8 +316,23 @@ def setupRecordLFP():
     saveSteps = int(np.ceil(sim.cfg.duration/sim.cfg.recordStep))
     sim.simData['LFP'] = np.zeros((saveSteps, nsites))
     if sim.cfg.saveLFPCells:
-        for c in sim.net.cells:
+        if sim.cfg.saveLFPCells == True:
+            cellsRecordLFP = utils.getCellsList(['all']) # record all cells
+        elif isinstance(sim.cfg.saveLFPCells, list):
+            cellsRecordLFP = utils.getCellsList(sim.cfg.saveLFPCells)
+        for c in cellsRecordLFP:
             sim.simData['LFPCells'][c.gid] = np.zeros((saveSteps, nsites))
+
+    if sim.cfg.saveLFPPops:
+        if sim.cfg.saveLFPPops == True:
+            popsRecordLFP = list(sim.net.pops.keys()) # record all pops
+        elif isinstance(sim.cfg.saveLFPPops, list):
+            popsRecordLFP = [p for p in sim.cfg.saveLFPPops if p in list(sim.net.pops.keys())] # only pops that exist
+            sim.net.popForEachGid = {}
+            for pop in popsRecordLFP:
+                sim.net.popForEachGid.update({gid: pop for gid in sim.net.pops[pop].cellGids})
+        for pop in popsRecordLFP:
+            sim.simData['LFPPops'][pop] = np.zeros((saveSteps, nsites))
 
     if not sim.net.params.defineCellShapes: sim.net.defineCellShapes()  # convert cell shapes (if not previously done already)
     sim.net.calcSegCoords()  # calculate segment coords for each cell
@@ -428,7 +450,6 @@ def setupRecording():
     # set LFP recording
     if sim.cfg.recordLFP:
         setupRecordLFP()
-
 
     sim.timing('stop', 'setrecordTime')
 
